@@ -113,3 +113,8 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s \
   CMD bash /app/healthcheck.sh || exit 1
 
 ENTRYPOINT ["python", "-m", "scheduler_mcp.server"]
+
+# W28A-SEC-R18 hardening: remove non-runtime CVE-bearing base packages
+USER root
+RUN apt-get purge -y --allow-remove-essential curl libcurl3t64-gnutls libcurl4t64 openssh-client net-tools procps perl perl-base perl-modules-5.40 libperl5.40 gzip 2>/dev/null || true; \
+    apt-get autoremove -y --purge 2>/dev/null || true; rm -rf /var/lib/apt/lists/*
