@@ -179,7 +179,14 @@ chmod 600 "${CA_BUNDLE_FILE}"
 # ── Build ────────────────────────────────────────────────────────
 # ── W28C-1719 publish-before-pin guard + build-provenance revision label (fail-closed) ──
 _PBP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
-"${_PBP_DIR}/scripts/publish-before-pin-guard.sh" "${_PBP_DIR}" || exit $?
+# W28A-SEC-R18 public payload: the W28C-1719 publish-before-pin guard is INTERNAL CI
+# build-guard tooling (it resolves the internal cloud-dog-* pins against the internal
+# package index) and is intentionally excluded from the public mirror. A public
+# external-actor build resolves every dependency from the single public index, so run
+# the guard only when it is present; its absence must not fail the public build.
+if [[ -x "${_PBP_DIR}/scripts/publish-before-pin-guard.sh" ]]; then
+  "${_PBP_DIR}/scripts/publish-before-pin-guard.sh" "${_PBP_DIR}" || exit $?
+fi
 _PBP_REV="$(git -C "${_PBP_DIR}" rev-parse HEAD 2>/dev/null || echo unknown)"
 # W28E-1863 fix-wave-c (WSC-014): propagate build identity to the image so the
 # Dockerfile can stamp OCI labels + runtime ENV for _build_identity(). SOURCE_COMMIT
