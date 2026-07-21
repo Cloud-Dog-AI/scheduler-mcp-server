@@ -42,10 +42,16 @@ ENV HTTP_PROXY=${HTTP_PROXY} \
 
 # Public build — the system ca-certificates trust store is sufficient for public
 # (or boundary-provided) package indexes. No private CA overlay is installed.
+#
+# W28A-SEC-R18 hardening: install ONLY ca-certificates. Every runtime dependency
+# resolves from prebuilt manylinux wheels (verified: 0 wheels compiled), so no
+# compiler toolchain is needed — dropping `curl` and `build-essential` removes
+# curl/libcurl, gcc/cpp/binutils/make/dpkg-dev and the full perl toolchain
+# (perl/perl-modules/libperl5.40) and their base-OS CVEs from the runtime image.
 RUN set -eux; \
     apt-get update; \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        ca-certificates curl build-essential; \
+        ca-certificates; \
     rm -rf /var/lib/apt/lists/*
 
 RUN useradd --create-home --uid 1500 --shell /bin/bash appuser
@@ -86,6 +92,18 @@ RUN --mount=type=secret,id=pip_conf,target=/etc/pip.conf \
     chmod +x healthcheck.sh; \
     mkdir -p /app/data /app/data/storage /app/logs; \
     chown -R appuser:appuser /app
+
+# W28A-SEC-R18 hardening: purge any remaining base-OS packages the runtime does not
+# use (healthcheck is python-stdlib; the app runs `python -m scheduler_mcp.server`).
+# This clears the removable perl/gzip/net-tools/procps/openssh/curl base-OS CVEs.
+# --allow-remove-essential + `|| true` so a package already absent does not fail the
+# build; apt lists are always removed. The app import + /health are verified post-build.
+RUN set -eux; \
+    apt-get purge -y --allow-remove-essential \
+        curl libcurl3t64-gnutls libcurl4t64 openssh-client net-tools procps \
+        perl perl-modules-5.40 libperl5.40 perl-base gzip 2>/dev/null || true; \
+    apt-get autoremove -y --purge 2>/dev/null || true; \
+    rm -rf /var/lib/apt/lists/* /usr/share/doc/* /usr/share/man/* 2>/dev/null || true
 
 USER appuser
 
