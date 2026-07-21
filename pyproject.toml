@@ -1,0 +1,124 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "scheduler-mcp-server"
+version = "0.1.0"
+description = "Cloud-Dog AI scheduler MCP service — scheduling control plane on AJOBS"
+readme = "README.md"
+authors = [{ name = "Cloud-Dog AI" }]
+requires-python = ">=3.13"
+license = { text = "Apache-2.0" }
+
+dependencies = [
+    # FastAPI + ASGI
+    "fastapi>=0.111,<1.0",
+    "uvicorn[standard]>=0.30,<1.0",
+    "pydantic>=2.7,<3.0",
+    "httpx>=0.27,<1.0",
+    "pyyaml>=6.0,<7.0",
+    "python-dateutil>=2.9,<3.0",
+    "croniter>=2.0,<3.0",
+    "sqlalchemy>=2.0,<3.0",
+    "alembic>=1.13,<2.0",
+    # W28K-1407 NF-1407-1 — Prometheus /metrics exposition (PS-40 §5).
+    "prometheus-client>=0.20,<1.0",
+    # W28K-1409 F-1409-6 — run report PDF rendering (chart-mcp W28F-908/910 pattern).
+    "reportlab>=3.6,<5.0",
+    # W28K-1409 F-1409-3 — PostgreSQL preprod DB variant driver (pg8000 = pure-Python, BSD).
+    "pg8000>=1.30,<2.0",
+
+    # Platform packages (Cloud-Dog AI — internal PyPI). W28R-3019: adopt latest
+    # approved versions from the internal Cloud-Dog PyPI (BUILD-TO-LATEST, RULES §1.7).
+    "cloud-dog-config==0.3.5",
+    "cloud-dog-logging==0.4.1",
+    "cloud-dog-api-kit==0.14.1",
+    "cloud-dog-idam==0.5.4",
+    "cloud-dog-db==0.3.3",
+    "cloud-dog-jobs==0.4.4",
+    "cloud-dog-cache==0.2.3",
+    "cloud-dog-storage==0.1.8",
+    # W28K-1409 F-1409-2 — real NL-chain synthesis via the platform LLM client.
+    # nl_chain imports cloud_dog_llm; it was missing from deps so the image never
+    # had it and synthesis silently fell back to the stub on the deployed service.
+    "cloud-dog-llm==0.4.4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0,<9.0",
+    "pytest-asyncio>=0.23,<1.0",
+    "pytest-cov>=5.0,<6.0",
+    "pytest-mock>=3.12,<4.0",
+    "ruff>=0.4.0,<1.0",
+    "mypy>=1.10,<2.0",
+]
+
+[project.scripts]
+scheduler-mcp = "scheduler_mcp.server:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["scheduler_mcp*"]
+
+[tool.setuptools.package-data]
+"scheduler_mcp" = ["py.typed", "db/migrations/versions/*.py", "db/migrations/env.py"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v --tb=short --strict-markers"
+markers = [
+    "unit: pure unit tests (no IO, no network)",
+    "integration: integration tests against in-process FastAPI + local SQLite + memory backends",
+    # PS-REQ-TEST-TRACE canonical tier markers (RULES.md §5.1)
+    "QT: Quick test — lint, format, type check (no real systems)",
+    "UT: Unit test — isolated function/class (mocks allowed)",
+    "ST: System test — local real services",
+    "IT: Integration test — real running servers + backends",
+    "AT: Acceptance test — full end-to-end against real systems",
+    # PS-REQ-TEST-TRACE canonical surface markers (§3 + §6.1)
+    "api: REST API surface",
+    "mcp: MCP JSON-RPC tools surface",
+    "a2a: Agent-to-Agent surface",
+    "webui: Browser-driven WebUI surface",
+    "cli: Command-line surface",
+    "internal: Internal-only (not user-facing)",
+    # PS-REQ-TEST-TRACE trait markers
+    "negative: Negative / refused-flow test (links to a CS-NNN)",
+    "probe: Smoke / probe test (exempt from req() requirement)",
+    "slow: Long-running test (excluded from default fast runs)",
+    "llm: Test requires a live LLM endpoint",
+    "external: Test requires a live external service (mail server, VDB, etc.)",
+    "flaky: Known-flaky (track in TEST-STATUS.md known-issue column)",
+    # PS-REQ-TEST-TRACE requirement linkage (§6)
+    "req: Bind the test to one or more REQ-IDs (FR-NNN / CS-NNN). Variadic.",
+]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+# W28R-3019 R4: lint/format the product, not frozen artefacts. `working/evidence/**`
+# and `archive/**` hold committed, checksum-covered evidence from closed lanes
+# (e.g. W28K-1405); reformatting them would invalidate those packs' CHECKSUMS and
+# rewrite another lane's immutable proof. They are not service source and are not
+# imported by it, so they are excluded from the QT gate rather than mutated.
+extend-exclude = ["working/evidence", "archive"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "W"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# Test modules deliberately establish tier markers and, in several cases,
+# process environment before importing the application under test.
+"tests/**/*.py" = ["E402"]
+
+[tool.mypy]
+python_version = "3.13"
+ignore_missing_imports = true
+strict_optional = true

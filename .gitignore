@@ -1,0 +1,68 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+*.egg
+MANIFEST
+
+# Virtualenv
+.venv/
+venv/
+ENV/
+env/
+env.bak/
+venv.bak/
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test / coverage
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.nox/
+
+# Runtime
+logs/
+data/
+*.log
+*.pid
+
+# Local config
+config.yaml
+.env
+private/
+
+# Working / temp
+working/tmp/
+tmp/
+
+# Keep:
+# working/evidence/  (closeout-tag-reachable proofs)
+# working/instructions/  (lane briefs if any are mirrored locally)
+!working/evidence/**
+.venv-at/

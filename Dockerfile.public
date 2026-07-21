@@ -1,0 +1,97 @@
+# syntax=docker/dockerfile:1
+# scheduler-mcp-server — Dockerfile.public (PS-97 v1.1 §1.1.3)
+#
+# PUBLIC variant — for external / GitHub-boundary builds (e.g. ghcr.io, Docker Hub).
+# Resolves every dependency from a SINGLE public package index supplied by the build
+# environment via PYPI_URL. Defaults to public PyPI (pypi.org). No internal Cloud-Dog
+# index, no corporate CA, no ICAP proxy default, no Vault/Gitea/staging/private
+# hostnames are referenced here, and --extra-index-url is never used (PS-97 §3.3 / §4).
+#
+# Select via: docker-build.sh --variant public
+#
+# NOTE: the Cloud-Dog platform packages (cloud-dog-config, cloud-dog-logging,
+# cloud-dog-api-kit, cloud-dog-idam, cloud-dog-db, cloud-dog-jobs, cloud-dog-cache,
+# cloud-dog-storage, cloud-dog-llm) MUST be resolvable from the configured public index
+# before this Dockerfile can build end-to-end. On the GitHub boundary they are built
+# from GitHub-mirrored source / GitHub Packages (PS-97 §3.3); on public PyPI they
+# resolve from the Cloud-Dog public namespace.
+
+FROM python:3.13-slim AS base
+LABEL org.opencontainers.image.licenses="Apache-2.0"
+LABEL org.opencontainers.image.vendor="Cloud-Dog, Viewdeck Engineering Limited"
+
+# Proxy pass-through only — no internal proxy is baked as a default. A boundary
+# builder may supply these; otherwise they are empty and direct egress is used.
+ARG HTTP_PROXY
+ARG HTTPS_PROXY
+ARG NO_PROXY
+ARG http_proxy
+ARG https_proxy
+ARG no_proxy
+
+ENV HTTP_PROXY=${HTTP_PROXY} \
+    HTTPS_PROXY=${HTTPS_PROXY} \
+    NO_PROXY=${NO_PROXY} \
+    http_proxy=${http_proxy} \
+    https_proxy=${https_proxy} \
+    no_proxy=${no_proxy} \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Public build — the system ca-certificates trust store is sufficient for public
+# (or boundary-provided) package indexes. No private CA overlay is installed.
+RUN set -eux; \
+    apt-get update; \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+        ca-certificates curl build-essential; \
+    rm -rf /var/lib/apt/lists/*
+
+RUN useradd --create-home --uid 1500 --shell /bin/bash appuser
+
+WORKDIR /app
+
+# Public package index. Defaults to public PyPI; a boundary builder may override to
+# its own single index (e.g. GitHub Packages). Single index only — never
+# --extra-index-url (PS-97 §3.3 / §4).
+#
+# The index is supplied to pip through the BuildKit `pip_conf` secret mounted at
+# /etc/pip.conf (single `index-url`, never persisted into an image layer). When the
+# configured index requires authentication, that secret is the ONLY place the
+# credentials live — they are never baked into ENV/ARG image layers (§9.2).
+#
+# PYPI_URL is retained only as a credential-free fallback for boundary builders that
+# build directly without supplying a pip_conf secret. pip's PIP_INDEX_URL env var
+# would OVERRIDE the mounted pip.conf, so we do NOT export it here; instead the
+# install RUN below exports it as a fallback ONLY when no pip_conf secret is present.
+ARG PYPI_URL=https://pypi.org/simple
+
+COPY pyproject.toml README.md ./
+COPY src/ ./src/
+COPY defaults.yaml ./
+COPY alembic.ini ./
+COPY ui /app/ui
+COPY healthcheck.sh ./
+
+# Install from the single configured public index. The pip.conf BuildKit secret is
+# authoritative (including any credentials) and is never written to an image layer;
+# only when no pip_conf secret is mounted do we fall back to the credential-free
+# PYPI_URL build-arg as a single index-url.
+RUN --mount=type=secret,id=pip_conf,target=/etc/pip.conf \
+    set -eux; \
+    if [ ! -s /etc/pip.conf ]; then export PIP_INDEX_URL="${PYPI_URL}"; fi; \
+    pip install --upgrade pip; \
+    pip install -e .; \
+    chmod +x healthcheck.sh; \
+    mkdir -p /app/data /app/data/storage /app/logs; \
+    chown -R appuser:appuser /app
+
+USER appuser
+
+EXPOSE 8080 8082 8083
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s \
+  CMD bash /app/healthcheck.sh || exit 1
+
+ENTRYPOINT ["python", "-m", "scheduler_mcp.server"]

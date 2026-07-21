@@ -1,0 +1,134 @@
+# scheduler-mcp-server — Default Configuration
+# Precedence (per cloud_dog_config): os.environ > env files > config.yaml > defaults.yaml
+# This file is committed; do not store secrets here. Use Vault-resolved config
+# expressions in env files (tests/env-IT, tests/env-AT) for credentials.
+
+service:
+  name: "scheduler-mcp-server"
+  version: "0.1.0"
+
+server:
+  web:
+    # W28R-3019 R4 — RULES §1.4/§1.4.1: service code resolves the WebUI admin credential
+    # ONLY through cloud_dog_config at `server.web.username` / `server.web.password`.
+    # No secret is committed here and NO ${vault...} expression is used at this layer: an
+    # expression that cannot resolve (e.g. UT, which RULES §5.6 forbids from requiring Vault)
+    # makes the loader silently degrade EVERY key to its default. Values are supplied by the
+    # CLOUD_DOG__SERVER__WEB__* env overlay — from Vault via Terraform when deployed, and
+    # from tests/env-* for local tiers.
+    username: "admin"
+    password: ""
+  api:
+    host: "0.0.0.0"
+    port: 8080
+    # Traefik strips /api before forwarding; base_path is /v1 NOT /api/v1 (AGENT-LESSONS §6.37)
+    base_path: "/v1"
+    cors:
+      origins: ["*"]
+    timeout_seconds: 30
+  mcp:
+    host: "0.0.0.0"
+    port: 8082
+    base_path: "/mcp"
+  a2a:
+    host: "0.0.0.0"
+    port: 8083
+    base_path: "/a2a"
+
+scheduler:
+  tenant_id: "default"
+  registry:
+    # Deployment-specific glob(s) to the Terraform *_containers.tf.json files used
+    # to seed the project registry. No internal path is shipped as a default;
+    # supply it per environment via config/env
+    # (CLOUD_DOG__SCHEDULER__REGISTRY__TERRAFORM_SOURCE_GLOBS). Empty = no
+    # Terraform-seeded projects (registry is populated via the API instead).
+    terraform_source_globs: []
+    agent_card_poll_interval_seconds: 300
+    agent_card_timeout_seconds: 5
+    enabled_default: true
+  quotas:
+    max_schedules_per_user: 100
+    min_interval_seconds: 60
+    max_run_duration_seconds: 3600
+    max_active_runs_per_schedule: 1
+    max_context_size_bytes: 65536
+    max_log_size_bytes: 1048576
+
+db:
+  url: "sqlite:///data/scheduler.db"
+  pool_size: 5
+  echo: false
+  migrations:
+    auto_upgrade_on_start: true
+
+cache:
+  backend: "memory"
+  prefix: "scheduler"
+  default_ttl_seconds: 300
+
+storage:
+  backend: "local"
+  root: "/app/data/storage"
+
+jobs:
+  backend: "memory"
+  resource_pools:
+    llm:
+      capacity: 2
+    default:
+      capacity: 8
+
+idam:
+  mode: "api_key"
+  default_admin_username: "admin"
+  bootstrap_seed:
+    api_keys: []
+  default_admin_scopes:
+    - "schedules.admin"
+    - "schedules.read"
+    - "schedules.write"
+    - "schedules.run_now"
+    - "registry.read"
+    - "registry.admin"
+    - "audit.read"
+    # W28K-1404c PS-70 admin scope catalogue — IDAM management surface.
+    - "users.read"
+    - "users.write"
+    - "groups.read"
+    - "groups.write"
+    - "apikeys.read"
+    - "apikeys.write"
+    - "roles.read"
+    - "roles.write"
+    - "rbac.read"
+    - "rbac.write"
+    # W28K-1404e PS-73 settings scope catalogue.
+    - "settings.read"
+    - "settings.admin"
+    - "settings.export"
+    # W28K-1407 F-1407-2 — reveal scope granted + enforced on reveal=true.
+    - "settings.reveal"
+
+logging:
+  level: "INFO"
+  format: "json"
+  audit_file: "logs/audit.log"
+  app_file: "logs/app.log"
+  # W28K-1407 F-1407-10 — AuditReader (and /v1/audit) tail this on-disk JSONL.
+  # cloud_dog_logging's audit FileSink default writes to "logs/audit.log.jsonl"
+  # (CWD-relative); in the container WORKDIR=/app so this resolves to
+  # /app/logs/audit.log.jsonl. Keeping the reader path relative keeps the
+  # emitter and reader aligned in every environment.
+  audit_log: "logs/audit.log.jsonl"
+  audit:
+    path: "logs/audit.log.jsonl"
+  console: true
+  rotation_size: "10 MB"
+  rotation_retention_days: 30
+  redact_patterns:
+    - "api_key"
+    - "password"
+    - "token"
+    - "secret"
+    - "authorization"
